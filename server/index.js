@@ -1,33 +1,62 @@
-const express = require("express"); // import express
+require("dotenv").config();
+const express = require("express");
+const http = require("http");
 const cors = require("cors");
-const http = require("http"); // import http
-const {Server} = require("socket.io"); // import socket.io
-const app = express(); // inetilize express
-const server = http.createServer(app); // add socket to server
-const io = new Server(server,
-    {
-        cors: {
-            // cors origin
-            origin: "http://localhost:5173",
-            methods: ["GET", "POST"]
-        }
-    }); // create new server instance
-// when a client connect with backend
-io.on("connection", (socket)=> {
-    console.log(`User connected ${socket.id}`)
-    socket.on("sendMessage", (message) =>{
-        console.log(`Message from user at backend ${message}`)
-        socket.broadcast.emit("reciveMessage", message)
-        console.log("Message sent fron backend to frontend", message)
-    })
-    socket.on("disconnect", () => {
-        console.log(`User disconnected ${socket.id}`)
-    })
+const { Server } = require("socket.io");
 
-})
-app.use(cors());
+const connectDB = require("./config/mongoDbconfig");
+const userRoute = require("./route/userRoute");
+
+const app = express();
+const server = http.createServer(app);
+
+// ---------- Middlewares ----------
+app.use(cors({
+    origin: "http://localhost:5173",
+    methods: ["GET", "POST"]
+}));
 app.use(express.json());
+
+// ---------- Routes ----------
+app.use("/api", userRoute);
+
+
+// ---------- Socket.IO ----------
+const io = new Server(server, {
+    cors: {
+        origin: "http://localhost:5173",
+        methods: ["GET", "POST"]
+    }
+});
+
+io.on("connection", (socket) => {
+    console.log(`User connected: ${socket.id}`);
+
+    socket.on("joinRoom", (roomId) => {
+        socket.join(roomId);
+        console.log(`User ${socket.id} joined room ${roomId}`);
+    });
+
+    socket.on("sendMessage", ({ text, roomId }) => {
+        console.log(`Message received for room ${roomId}: ${text}`);
+
+        socket.to(roomId).emit("receiveMessage", {
+            text,
+            from: socket.id
+        });
+    });
+
+    socket.on("disconnect", () => {
+        console.log(`User disconnected: ${socket.id}`);
+    });
+});
+
+// ---------- Server Startup ----------
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, ()=> {
-    console.log(`Srever is at PORT no. ${PORT}`)
-})
+
+(async () => {
+    await connectDB(); // ✅ DB first
+    server.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+})();
